@@ -19,7 +19,16 @@ from pydicom.pixel_data_handlers.util import apply_voi_lut
 from pydicom.pixel_data_handlers import pylibjpeg_handler, gdcm_handler
 
 from PyQt6.QtCore import Qt, QRectF, QSize
-from PyQt6.QtGui import QAction, QImage, QPixmap, QKeySequence, QPalette, QColor
+from PyQt6.QtGui import (
+    QAction,
+    QImage,
+    QPixmap,
+    QKeySequence,
+    QPalette,
+    QColor,
+    QTransform,
+    QPainter,
+)
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QGraphicsView, QGraphicsScene,
     QGraphicsPixmapItem, QToolBar, QLabel, QSlider, QWidget, QVBoxLayout,
@@ -136,9 +145,12 @@ class ImageCanvas(QGraphicsView):
         super().__init__(parent)
         self.setScene(QGraphicsScene(self))
         self.pix_item = QGraphicsPixmapItem()
+        self.pix_item.setTransformationMode(Qt.TransformationMode.FastTransformation)
         self.scene().addItem(self.pix_item)
         self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
-        self._zoom = 0
+        self.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, False)
+        self._current_scale = 1.0
+        self._min_scale = 1.0
 
     def set_pixmap(self, pm: QPixmap):
         self.scene().setSceneRect(QRectF(pm.rect()))
@@ -146,15 +158,28 @@ class ImageCanvas(QGraphicsView):
         self.reset_view()
 
     def reset_view(self):
-        self._zoom = 0
-        self.fitInView(self.sceneRect(), Qt.AspectRatioMode.KeepAspectRatio)
+        self.setTransform(QTransform())
+        scene_rect = self.sceneRect()
+        view_rect = self.viewport().rect()
+        if scene_rect.width() > view_rect.width() or scene_rect.height() > view_rect.height():
+            self.fitInView(scene_rect, Qt.AspectRatioMode.KeepAspectRatio)
+        self._current_scale = self.transform().m11()
+        self._min_scale = self._current_scale
 
     def wheelEvent(self, event):
-        if self.pix_item.pixmap().isNull(): return
-        factor = 1.25 if event.angleDelta().y()>0 else 0.8
-        self._zoom += 1 if factor>1 else -1
-        if self._zoom <= 0: self.reset_view()
-        else: self.scale(factor,factor)
+        if self.pix_item.pixmap().isNull():
+            return
+        factor = 1.25 if event.angleDelta().y() > 0 else 0.8
+        new_scale = self._current_scale * factor
+        if new_scale > 1.0:
+            factor = 1.0 / self._current_scale
+            self._current_scale = 1.0
+        elif new_scale < self._min_scale:
+            self.reset_view()
+            return
+        else:
+            self._current_scale = new_scale
+        self.scale(factor, factor)
 
 
 # ---------------------------------------------------------------------
