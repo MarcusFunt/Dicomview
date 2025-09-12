@@ -8,6 +8,7 @@
 
 import os
 import sys
+import subprocess
 from typing import Dict, Optional
 
 import numpy as np
@@ -79,6 +80,10 @@ class DICOMViewer(QMainWindow):
         self.normalize_button = QPushButton("Normalize Intensity")
         self.normalize_button.clicked.connect(self.normalize_volume)
         prep_layout.addWidget(self.normalize_button)
+
+        self.nppy_button = QPushButton("Run Neural Pre-Processing")
+        self.nppy_button.clicked.connect(self.run_nppy)
+        prep_layout.addWidget(self.nppy_button)
         prep_layout.addStretch()
 
         self.tabs = QTabWidget()
@@ -321,6 +326,25 @@ class DICOMViewer(QMainWindow):
             return
         self.volume = normalize_to_uint8(self.volume)
         self.display_current()
+
+    def run_nppy(self):
+        if not self.current_series:
+            return
+        paths = self.series_data[self.current_series]["paths"]
+        input_folder = os.path.commonpath(paths)
+        output_folder = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        if not output_folder:
+            return
+        try:
+            subprocess.run(
+                ["nppy", "-i", input_folder, "-o", output_folder],
+                check=True,
+            )
+            QMessageBox.information(
+                self, "Neural Pre-Processing", f"Results saved to: {output_folder}"
+            )
+        except Exception as e:  # pragma: no cover - GUI feedback
+            QMessageBox.critical(self, "Neural Pre-Processing", str(e))
 
     def next_slice(self):
         if self.current_series:
