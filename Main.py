@@ -5,7 +5,7 @@ Modernized PyQt6 DICOM/Image Viewer
 - Multi-series browser (select series from folder).
 - Supports JPEG2000 (lossless & irreversible) via pylibjpeg-openjpeg or GDCM.
 - Dark theme, modern split layout, toolbar.
-- Zoom (wheel), pan (drag), fit, slice slider, drag-and-drop.
+- Zoom (wheel), pan (drag), slice slider, drag-and-drop.
 """
 
 import os, sys, math, traceback
@@ -199,6 +199,7 @@ class DICOMViewer(QMainWindow):
         self.current_index: int = 0
         self.view_axis: str = "axial"
         self.volume: Optional[np.ndarray] = None
+        self.series_is_3d: bool = False
 
         # Tabs: Data and View
         self.series_list = QListWidget()
@@ -218,6 +219,7 @@ class DICOMViewer(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.addTab(data_tab, "Data")
         self.tabs.addTab(view_tab, "View")
+        self.tabs.currentChanged.connect(self.update_toolbar_visibility)
         self.setCentralWidget(self.tabs)
 
         # Status bar
@@ -227,6 +229,7 @@ class DICOMViewer(QMainWindow):
         self.setStatusBar(self.status)
 
         self._build_toolbar()
+        self.update_toolbar_visibility()
         self._set_dark_theme()
 
         ok, det = jpeg2000_support_status()
@@ -259,34 +262,41 @@ class DICOMViewer(QMainWindow):
         tb.setIconSize(QSize(16,16))
         self.addToolBar(tb)
 
-        act_open = QAction("Open Folder…", self)
-        act_open.setShortcut(QKeySequence("Ctrl+O"))
-        act_open.triggered.connect(self.open_folder_dialog)
-        tb.addAction(act_open)
+        self.act_open = QAction("Open Folder…", self)
+        self.act_open.setShortcut(QKeySequence("Ctrl+O"))
+        self.act_open.triggered.connect(self.open_folder_dialog)
+        tb.addAction(self.act_open)
+        self.sep_after_open = tb.addSeparator()
 
-        tb.addSeparator()
+        self.act_prev = QAction("Prev", self)
+        self.act_prev.setShortcuts([QKeySequence(Qt.Key.Key_Left), QKeySequence("PgUp")])
+        self.act_prev.triggered.connect(self.prev_slice)
+        tb.addAction(self.act_prev)
 
-        act_fit = QAction("Fit", self)
-        act_fit.setShortcut("F")
-        act_fit.triggered.connect(self.canvas.reset_view)
-        tb.addAction(act_fit)
+        self.act_next = QAction("Next", self)
+        self.act_next.setShortcuts([QKeySequence(Qt.Key.Key_Right), QKeySequence("PgDown")])
+        self.act_next.triggered.connect(self.next_slice)
+        tb.addAction(self.act_next)
 
-        act_prev = QAction("Prev", self)
-        act_prev.setShortcuts([QKeySequence(Qt.Key.Key_Left), QKeySequence("PgUp")])
-        act_prev.triggered.connect(self.prev_slice)
-        tb.addAction(act_prev)
-
-        act_next = QAction("Next", self)
-        act_next.setShortcuts([QKeySequence(Qt.Key.Key_Right), QKeySequence("PgDown")])
-        act_next.triggered.connect(self.next_slice)
-        tb.addAction(act_next)
-
-        tb.addSeparator()
+        self.sep_before_axis = tb.addSeparator()
 
         self.axis_combo = QComboBox()
         self.axis_combo.addItems(["Axial", "Coronal", "Sagittal"])
         self.axis_combo.currentTextChanged.connect(self.change_orientation)
         tb.addWidget(self.axis_combo)
+
+    def update_toolbar_visibility(self, index: int = None):
+        is_data = self.tabs.currentIndex() == 0
+        self.act_open.setVisible(is_data)
+        self.sep_after_open.setVisible(is_data)
+
+        show_nav = not is_data
+        self.act_prev.setVisible(show_nav)
+        self.act_next.setVisible(show_nav)
+
+        axis_visible = show_nav and self.series_is_3d
+        self.sep_before_axis.setVisible(axis_visible)
+        self.axis_combo.setVisible(axis_visible)
 
     # -----------------------------------------------------------------
     # File loading
@@ -335,10 +345,17 @@ class DICOMViewer(QMainWindow):
             self.series_list.setCurrentRow(0)
 
     def change_series(self, current: QListWidgetItem):
-        if not current: return
+        if not current:
+            return
         key = current.data(Qt.ItemDataRole.UserRole)
         self.current_series = key
         self.current_index = 0
+
+        self.series_is_3d = "3d" in current.text().lower()
+        self.axis_combo.setCurrentIndex(0)
+        self.view_axis = "axial"
+        self.update_toolbar_visibility()
+
         paths = self.series_data[key]["paths"]
         vol = []
         for p in paths:
