@@ -362,10 +362,8 @@ class DICOMViewer(QMainWindow):
                 arr = self.volume[self.current_index]
             elif self.view_axis == "coronal":
                 arr = self.volume[:, self.current_index, :]
-                arr = arr.T
             else:
                 arr = self.volume[:, :, self.current_index]
-                arr = arr.T
             qimg = numpy_to_qimage(arr)
             self.canvas.set_pixmap(QPixmap.fromImage(qimg))
             total = self.volume.shape[0] if self.view_axis == "axial" else (
