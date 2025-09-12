@@ -29,6 +29,7 @@ from PyQt6.QtWidgets import (
     QListWidgetItem,
     QComboBox,
     QTabWidget,
+    QPushButton,
 )
 
 from canvas import ImageCanvas
@@ -39,6 +40,7 @@ from utils import (
     sort_key_from_ds,
     dicom_to_ndarray,
     numpy_to_qimage,
+    normalize_to_uint8,
 )
 
 
@@ -57,7 +59,7 @@ class DICOMViewer(QMainWindow):
         self.series_is_3d: bool = False
         self.invert_colors: bool = False
 
-        # Tabs: Data and View
+        # Tabs: Data, View and Pre-processing
         self.series_list = QListWidget()
         self.series_list.currentItemChanged.connect(self.change_series)
         data_tab = QWidget()
@@ -72,9 +74,17 @@ class DICOMViewer(QMainWindow):
         view_layout.addWidget(self.canvas)
         view_layout.addWidget(self.slice_slider)
 
+        prep_tab = QWidget()
+        prep_layout = QVBoxLayout(prep_tab)
+        self.normalize_button = QPushButton("Normalize Intensity")
+        self.normalize_button.clicked.connect(self.normalize_volume)
+        prep_layout.addWidget(self.normalize_button)
+        prep_layout.addStretch()
+
         self.tabs = QTabWidget()
         self.tabs.addTab(data_tab, "Data")
         self.tabs.addTab(view_tab, "View")
+        self.tabs.addTab(prep_tab, "Prep")
         self.tabs.currentChanged.connect(self.update_toolbar_visibility)
         self.setCentralWidget(self.tabs)
 
@@ -164,11 +174,14 @@ class DICOMViewer(QMainWindow):
         tb.addAction(self.act_invert)
 
     def update_toolbar_visibility(self, index: int = None):
-        is_data = self.tabs.currentIndex() == 0
+        current = self.tabs.currentIndex()
+        is_data = current == 0
+        is_view = current == 1
+
         self.act_open.setVisible(is_data)
         self.sep_after_open.setVisible(is_data)
 
-        show_nav = not is_data
+        show_nav = is_view
         self.act_prev.setVisible(show_nav)
         self.act_next.setVisible(show_nav)
         self.sep_before_axis.setVisible(show_nav and self.series_is_3d)
@@ -298,6 +311,15 @@ class DICOMViewer(QMainWindow):
 
     def toggle_invert(self, checked: bool):
         self.invert_colors = checked
+        self.display_current()
+
+    # -----------------------------------------------------------------
+    # Pre-processing
+    # -----------------------------------------------------------------
+    def normalize_volume(self):
+        if self.volume is None:
+            return
+        self.volume = normalize_to_uint8(self.volume)
         self.display_current()
 
     def next_slice(self):
