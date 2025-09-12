@@ -5,3 +5,5 @@ pylibjpeg
 pylibjpeg-openjpeg
 gdcm
 PyQt6
+nppy
+

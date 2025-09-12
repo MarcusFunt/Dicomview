@@ -9,7 +9,7 @@ A minimal PyQt6 DICOM viewer.
 - Toggle between axial, coronal and sagittal views for 3D volumes
 - Tabbed interface separating data selection and image viewing
 - Sidebar controls for navigation, zoom, reset view and color inversion
-- MRI pre-processing tab with intensity normalization
+- MRI pre-processing tab with intensity normalization and Neural Pre-Processing (`nppy`) integration
 
 ## Requirements
 
