@@ -55,6 +55,7 @@ class DICOMViewer(QMainWindow):
         self.view_axis: str = "axial"
         self.volume: Optional[np.ndarray] = None
         self.series_is_3d: bool = False
+        self.invert_colors: bool = False
 
         # Tabs: Data and View
         self.series_list = QListWidget()
@@ -83,7 +84,7 @@ class DICOMViewer(QMainWindow):
         self.status.addPermanentWidget(self.info_label, 1)
         self.setStatusBar(self.status)
 
-        self._build_toolbar()
+        self._build_sidebar()
         self.update_toolbar_visibility()
         self._set_dark_theme()
 
@@ -101,6 +102,7 @@ class DICOMViewer(QMainWindow):
 
     def _set_dark_theme(self):
         app = QApplication.instance()
+        app.setStyle("Fusion")
         palette = QPalette()
         palette.setColor(QPalette.ColorRole.Window, QColor(53, 53, 53))
         palette.setColor(QPalette.ColorRole.WindowText, Qt.GlobalColor.white)
@@ -115,12 +117,14 @@ class DICOMViewer(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
         app.setPalette(palette)
 
-    def _build_toolbar(self):
+    def _build_sidebar(self):
         tb = QToolBar("Main", self)
-        tb.setIconSize(QSize(16, 16))
-        self.addToolBar(tb)
+        tb.setMovable(False)
+        tb.setIconSize(QSize(24, 24))
+        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
+        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, tb)
 
-        self.act_open = QAction("Open Folder…", self)
+        self.act_open = QAction("Open", self)
         self.act_open.setShortcut(QKeySequence("Ctrl+O"))
         self.act_open.triggered.connect(self.open_folder_dialog)
         tb.addAction(self.act_open)
@@ -143,6 +147,22 @@ class DICOMViewer(QMainWindow):
         self.axis_combo.currentTextChanged.connect(self.change_orientation)
         tb.addWidget(self.axis_combo)
 
+        self.sep_before_zoom = tb.addSeparator()
+        self.act_zoom_in = QAction("Zoom +", self)
+        self.act_zoom_in.triggered.connect(self.canvas.zoom_in)
+        tb.addAction(self.act_zoom_in)
+        self.act_zoom_out = QAction("Zoom -", self)
+        self.act_zoom_out.triggered.connect(self.canvas.zoom_out)
+        tb.addAction(self.act_zoom_out)
+        self.act_reset = QAction("Reset", self)
+        self.act_reset.triggered.connect(self.canvas.reset_view)
+        tb.addAction(self.act_reset)
+
+        self.sep_before_config = tb.addSeparator()
+        self.act_invert = QAction("Invert", self, checkable=True)
+        self.act_invert.toggled.connect(self.toggle_invert)
+        tb.addAction(self.act_invert)
+
     def update_toolbar_visibility(self, index: int = None):
         is_data = self.tabs.currentIndex() == 0
         self.act_open.setVisible(is_data)
@@ -151,10 +171,15 @@ class DICOMViewer(QMainWindow):
         show_nav = not is_data
         self.act_prev.setVisible(show_nav)
         self.act_next.setVisible(show_nav)
+        self.sep_before_axis.setVisible(show_nav and self.series_is_3d)
+        self.axis_combo.setVisible(show_nav and self.series_is_3d)
 
-        axis_visible = show_nav and self.series_is_3d
-        self.sep_before_axis.setVisible(axis_visible)
-        self.axis_combo.setVisible(axis_visible)
+        self.sep_before_zoom.setVisible(show_nav)
+        self.act_zoom_in.setVisible(show_nav)
+        self.act_zoom_out.setVisible(show_nav)
+        self.act_reset.setVisible(show_nav)
+        self.sep_before_config.setVisible(show_nav)
+        self.act_invert.setVisible(show_nav)
 
     # -----------------------------------------------------------------
     # File loading
@@ -246,6 +271,8 @@ class DICOMViewer(QMainWindow):
                 arr = self.volume[:, self.current_index, :]
             else:
                 arr = self.volume[:, :, self.current_index]
+            if self.invert_colors:
+                arr = 255 - arr
             qimg = numpy_to_qimage(arr)
             self.canvas.set_pixmap(QPixmap.fromImage(qimg))
             total = (
@@ -267,6 +294,10 @@ class DICOMViewer(QMainWindow):
 
     def on_slider_changed(self, val: int):
         self.current_index = val
+        self.display_current()
+
+    def toggle_invert(self, checked: bool):
+        self.invert_colors = checked
         self.display_current()
 
     def next_slice(self):

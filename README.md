@@ -8,6 +8,7 @@ A minimal PyQt6 DICOM viewer.
 - Slice navigation with mouse and keyboard
 - Toggle between axial, coronal and sagittal views for 3D volumes
 - Tabbed interface separating data selection and image viewing
+- Sidebar controls for navigation, zoom, reset view and color inversion
 
 ## Requirements
 

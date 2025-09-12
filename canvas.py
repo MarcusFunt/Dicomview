@@ -35,6 +35,17 @@ class ImageCanvas(QGraphicsView):
         if self.pix_item.pixmap().isNull():
             return
         factor = 1.25 if event.angleDelta().y() > 0 else 0.8
+        self._zoom(factor)
+
+    def zoom_in(self):
+        self._zoom(1.25)
+
+    def zoom_out(self):
+        self._zoom(0.8)
+
+    def _zoom(self, factor: float):
+        if self.pix_item.pixmap().isNull():
+            return
         new_scale = self._current_scale * factor
         if new_scale > 1.0:
             factor = 1.0 / self._current_scale
