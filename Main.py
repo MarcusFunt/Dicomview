@@ -126,13 +126,15 @@ def dicom_to_ndarray(ds: pydicom.dataset.FileDataset, frame_index: int = 0) -> n
 
 
 def numpy_to_qimage(arr: np.ndarray) -> QImage:
+    """Convert a numpy array to a QImage ensuring a contiguous buffer."""
+    arr = np.ascontiguousarray(arr)
     if arr.ndim == 2:
-        h,w = arr.shape
-        qimg = QImage(arr.data, w,h, w, QImage.Format.Format_Grayscale8)
+        h, w = arr.shape
+        qimg = QImage(arr.tobytes(), w, h, arr.strides[0], QImage.Format.Format_Grayscale8)
         return qimg.copy()
-    elif arr.ndim == 3 and arr.shape[2]==3:
-        h,w,_ = arr.shape
-        qimg = QImage(arr.data, w,h, w*3, QImage.Format.Format_RGB888)
+    elif arr.ndim == 3 and arr.shape[2] == 3:
+        h, w, _ = arr.shape
+        qimg = QImage(arr.tobytes(), w, h, arr.strides[0], QImage.Format.Format_RGB888)
         return qimg.copy()
     return numpy_to_qimage(normalize_to_uint8(arr.squeeze()))
 
