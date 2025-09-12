@@ -32,7 +32,7 @@ from PyQt6.QtGui import (
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QFileDialog, QGraphicsView, QGraphicsScene,
     QGraphicsPixmapItem, QToolBar, QLabel, QSlider, QWidget, QVBoxLayout,
-    QMessageBox, QStatusBar, QListWidget, QListWidgetItem, QSplitter
+    QMessageBox, QStatusBar, QListWidget, QListWidgetItem, QComboBox, QTabWidget
 )
 
 
@@ -195,25 +195,28 @@ class DICOMViewer(QMainWindow):
         self.series_data: Dict[str,Dict] = {}
         self.current_series: Optional[str] = None
         self.current_index: int = 0
+        self.view_axis: str = "axial"
+        self.volume: Optional[np.ndarray] = None
 
-        # UI: left series list, right viewer
+        # Tabs: Data and View
         self.series_list = QListWidget()
         self.series_list.currentItemChanged.connect(self.change_series)
+        data_tab = QWidget()
+        data_layout = QVBoxLayout(data_tab)
+        data_layout.addWidget(self.series_list)
 
         self.canvas = ImageCanvas(self)
         self.slice_slider = QSlider(Qt.Orientation.Horizontal)
         self.slice_slider.valueChanged.connect(self.on_slider_changed)
+        view_tab = QWidget()
+        view_layout = QVBoxLayout(view_tab)
+        view_layout.addWidget(self.canvas)
+        view_layout.addWidget(self.slice_slider)
 
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-        right_layout.addWidget(self.canvas)
-        right_layout.addWidget(self.slice_slider)
-
-        splitter = QSplitter()
-        splitter.addWidget(self.series_list)
-        splitter.addWidget(right_panel)
-        splitter.setStretchFactor(1,1)
-        self.setCentralWidget(splitter)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(data_tab, "Data")
+        self.tabs.addTab(view_tab, "View")
+        self.setCentralWidget(self.tabs)
 
         # Status bar
         self.info_label = QLabel("Ready")
@@ -276,6 +279,13 @@ class DICOMViewer(QMainWindow):
         act_next.triggered.connect(self.next_slice)
         tb.addAction(act_next)
 
+        tb.addSeparator()
+
+        self.axis_combo = QComboBox()
+        self.axis_combo.addItems(["Axial", "Coronal", "Sagittal"])
+        self.axis_combo.currentTextChanged.connect(self.change_orientation)
+        tb.addWidget(self.axis_combo)
+
     # -----------------------------------------------------------------
     # File loading
     # -----------------------------------------------------------------
@@ -327,24 +337,39 @@ class DICOMViewer(QMainWindow):
         key = current.data(Qt.ItemDataRole.UserRole)
         self.current_series = key
         self.current_index = 0
-        n = len(self.series_data[key]["paths"])
-        self.slice_slider.setMaximum(max(0,n-1))
+        paths = self.series_data[key]["paths"]
+        vol = []
+        for p in paths:
+            try:
+                ds = dcmread(p, force=True)
+                vol.append(dicom_to_ndarray(ds))
+            except Exception:
+                continue
+        self.volume = np.stack(vol, axis=0) if vol else None
+        self._update_slider_range()
         self.display_current()
 
     # -----------------------------------------------------------------
     # Display
     # -----------------------------------------------------------------
     def display_current(self):
-        if not self.current_series: return
-        paths = self.series_data[self.current_series]["paths"]
-        if not paths: return
-        path = paths[self.current_index]
+        if self.volume is None:
+            return
         try:
-            ds = dcmread(path, force=True)
-            arr = dicom_to_ndarray(ds)
+            if self.view_axis == "axial":
+                arr = self.volume[self.current_index]
+            elif self.view_axis == "coronal":
+                arr = self.volume[:, self.current_index, :]
+                arr = arr.T
+            else:
+                arr = self.volume[:, :, self.current_index]
+                arr = arr.T
             qimg = numpy_to_qimage(arr)
             self.canvas.set_pixmap(QPixmap.fromImage(qimg))
-            info = f"{os.path.basename(path)} | Slice {self.current_index+1}/{len(paths)}"
+            total = self.volume.shape[0] if self.view_axis == "axial" else (
+                self.volume.shape[1] if self.view_axis == "coronal" else self.volume.shape[2]
+            )
+            info = f"Slice {self.current_index+1}/{total} ({self.view_axis})"
             self.info_label.setText(info)
         except Exception as e:
             traceback.print_exc()
@@ -356,8 +381,7 @@ class DICOMViewer(QMainWindow):
 
     def next_slice(self):
         if self.current_series:
-            paths = self.series_data[self.current_series]["paths"]
-            if self.current_index < len(paths)-1:
+            if self.current_index < self.slice_slider.maximum():
                 self.current_index += 1
                 self.slice_slider.setValue(self.current_index)
 
@@ -365,6 +389,24 @@ class DICOMViewer(QMainWindow):
         if self.current_series and self.current_index>0:
             self.current_index -= 1
             self.slice_slider.setValue(self.current_index)
+
+    def change_orientation(self, text: str):
+        self.view_axis = text.lower()
+        self.current_index = 0
+        self._update_slider_range()
+        self.display_current()
+
+    def _update_slider_range(self):
+        if self.volume is None:
+            self.slice_slider.setMaximum(0)
+            return
+        if self.view_axis == "axial":
+            n = self.volume.shape[0]
+        elif self.view_axis == "coronal":
+            n = self.volume.shape[1]
+        else:
+            n = self.volume.shape[2]
+        self.slice_slider.setMaximum(max(0, n - 1))
 
 
 def main():
