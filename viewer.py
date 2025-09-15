@@ -3,7 +3,7 @@
 - Multi-series browser (select series from folder).
 - Supports JPEG2000 (lossless & irreversible) via pylibjpeg-openjpeg or GDCM.
 - Dark theme, modern split layout, toolbar.
-- Zoom (wheel), pan (drag), slice slider, drag-and-drop.
+- Pan (drag), slice slider, drag-and-drop.
 """
 
 import os
@@ -58,7 +58,6 @@ class DICOMViewer(QMainWindow):
         self.view_axis: str = "axial"
         self.volume: Optional[np.ndarray] = None
         self.series_is_3d: bool = False
-        self.invert_colors: bool = False
 
         # Tabs: Data, View and Pre-processing
         self.series_list = QListWidget()
@@ -137,7 +136,7 @@ class DICOMViewer(QMainWindow):
         tb.setMovable(False)
         tb.setIconSize(QSize(24, 24))
         tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self.addToolBar(Qt.ToolBarArea.LeftToolBarArea, tb)
+        self.addToolBar(Qt.ToolBarArea.RightToolBarArea, tb)
 
         self.act_open = QAction("Open", self)
         self.act_open.setShortcut(QKeySequence("Ctrl+O"))
@@ -162,22 +161,6 @@ class DICOMViewer(QMainWindow):
         self.axis_combo.currentTextChanged.connect(self.change_orientation)
         tb.addWidget(self.axis_combo)
 
-        self.sep_before_zoom = tb.addSeparator()
-        self.act_zoom_in = QAction("Zoom +", self)
-        self.act_zoom_in.triggered.connect(self.canvas.zoom_in)
-        tb.addAction(self.act_zoom_in)
-        self.act_zoom_out = QAction("Zoom -", self)
-        self.act_zoom_out.triggered.connect(self.canvas.zoom_out)
-        tb.addAction(self.act_zoom_out)
-        self.act_reset = QAction("Reset", self)
-        self.act_reset.triggered.connect(self.canvas.reset_view)
-        tb.addAction(self.act_reset)
-
-        self.sep_before_config = tb.addSeparator()
-        self.act_invert = QAction("Invert", self, checkable=True)
-        self.act_invert.toggled.connect(self.toggle_invert)
-        tb.addAction(self.act_invert)
-
     def update_toolbar_visibility(self, index: int = None):
         current = self.tabs.currentIndex()
         is_data = current == 0
@@ -186,18 +169,11 @@ class DICOMViewer(QMainWindow):
         self.act_open.setVisible(is_data)
         self.sep_after_open.setVisible(is_data)
 
-        show_nav = is_view
-        self.act_prev.setVisible(show_nav)
-        self.act_next.setVisible(show_nav)
-        self.sep_before_axis.setVisible(show_nav and self.series_is_3d)
-        self.axis_combo.setVisible(show_nav and self.series_is_3d)
-
-        self.sep_before_zoom.setVisible(show_nav)
-        self.act_zoom_in.setVisible(show_nav)
-        self.act_zoom_out.setVisible(show_nav)
-        self.act_reset.setVisible(show_nav)
-        self.sep_before_config.setVisible(show_nav)
-        self.act_invert.setVisible(show_nav)
+        show_view = is_view
+        self.act_prev.setVisible(show_view)
+        self.act_next.setVisible(show_view)
+        self.sep_before_axis.setVisible(show_view and self.series_is_3d)
+        self.axis_combo.setVisible(show_view and self.series_is_3d)
 
     # -----------------------------------------------------------------
     # File loading
@@ -289,8 +265,6 @@ class DICOMViewer(QMainWindow):
                 arr = self.volume[:, self.current_index, :]
             else:
                 arr = self.volume[:, :, self.current_index]
-            if self.invert_colors:
-                arr = 255 - arr
             qimg = numpy_to_qimage(arr)
             self.canvas.set_pixmap(QPixmap.fromImage(qimg))
             total = (
@@ -314,9 +288,6 @@ class DICOMViewer(QMainWindow):
         self.current_index = val
         self.display_current()
 
-    def toggle_invert(self, checked: bool):
-        self.invert_colors = checked
-        self.display_current()
 
     # -----------------------------------------------------------------
     # Pre-processing
