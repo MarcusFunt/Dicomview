@@ -154,6 +154,16 @@ class DICOMViewer(QMainWindow):
         self.act_next.triggered.connect(self.next_slice)
         tb.addAction(self.act_next)
 
+        self.act_zoom_in = QAction("Zoom +", self)
+        self.act_zoom_in.setShortcut(QKeySequence("+"))
+        self.act_zoom_in.triggered.connect(self.canvas.zoom_in)
+        tb.addAction(self.act_zoom_in)
+
+        self.act_zoom_out = QAction("Zoom -", self)
+        self.act_zoom_out.setShortcut(QKeySequence("-"))
+        self.act_zoom_out.triggered.connect(self.canvas.zoom_out)
+        tb.addAction(self.act_zoom_out)
+
         self.sep_before_axis = tb.addSeparator()
 
         self.axis_combo = QComboBox()
@@ -172,6 +182,8 @@ class DICOMViewer(QMainWindow):
         show_view = is_view
         self.act_prev.setVisible(show_view)
         self.act_next.setVisible(show_view)
+        self.act_zoom_in.setVisible(show_view)
+        self.act_zoom_out.setVisible(show_view)
         self.sep_before_axis.setVisible(show_view and self.series_is_3d)
         self.axis_combo.setVisible(show_view and self.series_is_3d)
 
@@ -250,12 +262,12 @@ class DICOMViewer(QMainWindow):
                 continue
         self.volume = np.stack(vol, axis=0) if vol else None
         self._update_slider_range()
-        self.display_current()
+        self.display_current(reset_view=True)
 
     # -----------------------------------------------------------------
     # Display
     # -----------------------------------------------------------------
-    def display_current(self):
+    def display_current(self, reset_view: bool = False):
         if self.volume is None:
             return
         try:
@@ -266,7 +278,7 @@ class DICOMViewer(QMainWindow):
             else:
                 arr = self.volume[:, :, self.current_index]
             qimg = numpy_to_qimage(arr)
-            self.canvas.set_pixmap(QPixmap.fromImage(qimg))
+            self.canvas.set_pixmap(QPixmap.fromImage(qimg), reset=reset_view)
             total = (
                 self.volume.shape[0]
                 if self.view_axis == "axial"
@@ -332,7 +344,7 @@ class DICOMViewer(QMainWindow):
         self.view_axis = text.lower()
         self.current_index = 0
         self._update_slider_range()
-        self.display_current()
+        self.display_current(reset_view=True)
 
     def _update_slider_range(self):
         if self.volume is None:
