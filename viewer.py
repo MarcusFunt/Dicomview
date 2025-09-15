@@ -96,7 +96,8 @@ class DICOMViewer(QMainWindow):
         current = self.tab_widget.currentIndex()
         is_data = current == 0
         is_view = current == 1
-        self.sidebar.update_visibility(is_data, is_view, self.series_is_3d)
+        self.sidebar.update_visibility(is_data, is_view)
+        self.tabs.axis_combo.setVisible(is_view and self.series_is_3d)
 
     # -----------------------------------------------------------------
     # File loading
@@ -132,7 +133,7 @@ class DICOMViewer(QMainWindow):
         self.current_index = 0
 
         self.series_is_3d = "3d" in current.text().lower()
-        self.sidebar.axis_combo.setCurrentIndex(0)
+        self.tabs.axis_combo.setCurrentIndex(0)
         self.view_axis = "axial"
         self.update_toolbar_visibility()
 

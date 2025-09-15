@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QSlider,
     QPushButton,
     QTabWidget,
+    QComboBox,
 )
 
 
@@ -21,10 +22,15 @@ class ViewerTabs:
 
         self.slice_slider = QSlider(Qt.Orientation.Horizontal)
         self.slice_slider.valueChanged.connect(parent.on_slider_changed)
+        self.axis_combo = QComboBox()
+        self.axis_combo.addItems(["Axial", "Coronal", "Sagittal"])
+        self.axis_combo.currentTextChanged.connect(parent.change_orientation)
+        self.axis_combo.setVisible(False)
         view_tab = QWidget()
         view_layout = QVBoxLayout(view_tab)
         view_layout.addWidget(canvas)
         view_layout.addWidget(self.slice_slider)
+        view_layout.addWidget(self.axis_combo)
 
         self.normalize_button = QPushButton("Normalize Intensity")
         self.normalize_button.clicked.connect(parent.normalize_volume)
