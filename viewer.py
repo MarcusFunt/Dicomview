@@ -93,7 +93,7 @@ class DICOMViewer(QMainWindow):
         app.setPalette(palette)
 
     def update_toolbar_visibility(self, index: int = None):
-        current = self.tab_widget.currentIndex()
+        current = self.tab_widget.currentIndex() if index is None else index
         is_data = current == 0
         is_view = current == 1
         self.sidebar.update_visibility(is_data, is_view, self.series_is_3d)
@@ -130,8 +130,9 @@ class DICOMViewer(QMainWindow):
         key = current.data(Qt.ItemDataRole.UserRole)
         self.current_series = key
         self.current_index = 0
-
-        self.series_is_3d = "3d" in current.text().lower()
+        ds = self.series_data[key]["meta"]
+        desc = getattr(ds, "SeriesDescription", "")
+        self.series_is_3d = "3d" in desc.lower()
         self.sidebar.axis_combo.setCurrentIndex(0)
         self.view_axis = "axial"
         self.update_toolbar_visibility()
