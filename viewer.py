@@ -1,48 +1,31 @@
-"""Modernized PyQt6 DICOM/Image Viewer.
-
-- Multi-series browser (select series from folder).
-- Supports JPEG2000 (lossless & irreversible) via pylibjpeg-openjpeg or GDCM.
-- Dark theme, modern split layout, toolbar.
-- Pan (drag), slice slider, drag-and-drop.
-"""
+"""Modernized PyQt6 DICOM/Image Viewer."""
 
 import os
 import sys
-import subprocess
 from typing import Dict, Optional
 
 import numpy as np
-import pydicom
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QAction, QPixmap, QKeySequence, QPalette, QColor
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QPixmap, QPalette, QColor
 from PyQt6.QtWidgets import (
     QApplication,
     QMainWindow,
     QFileDialog,
-    QToolBar,
     QLabel,
-    QSlider,
-    QWidget,
-    QVBoxLayout,
     QMessageBox,
     QStatusBar,
-    QListWidget,
     QListWidgetItem,
-    QComboBox,
-    QTabWidget,
-    QPushButton,
 )
 
 from canvas import ImageCanvas
 from utils import (
     jpeg2000_support_status,
-    is_dicom_file,
-    series_key_from_ds,
-    sort_key_from_ds,
-    dicom_to_ndarray,
     numpy_to_qimage,
-    normalize_to_uint8,
 )
+from sidebar import Sidebar
+from tabs import ViewerTabs
+import files as fileio
+import processing
 
 
 class DICOMViewer(QMainWindow):
@@ -59,38 +42,17 @@ class DICOMViewer(QMainWindow):
         self.volume: Optional[np.ndarray] = None
         self.series_is_3d: bool = False
 
-        # Tabs: Data, View and Pre-processing
-        self.series_list = QListWidget()
-        self.series_list.currentItemChanged.connect(self.change_series)
-        data_tab = QWidget()
-        data_layout = QVBoxLayout(data_tab)
-        data_layout.addWidget(self.series_list)
-
+        # Canvas and UI components
         self.canvas = ImageCanvas(self)
-        self.slice_slider = QSlider(Qt.Orientation.Horizontal)
-        self.slice_slider.valueChanged.connect(self.on_slider_changed)
-        view_tab = QWidget()
-        view_layout = QVBoxLayout(view_tab)
-        view_layout.addWidget(self.canvas)
-        view_layout.addWidget(self.slice_slider)
+        self.tabs = ViewerTabs(self, self.canvas)
+        self.sidebar = Sidebar(self, self.canvas)
 
-        prep_tab = QWidget()
-        prep_layout = QVBoxLayout(prep_tab)
-        self.normalize_button = QPushButton("Normalize Intensity")
-        self.normalize_button.clicked.connect(self.normalize_volume)
-        prep_layout.addWidget(self.normalize_button)
-
-        self.nppy_button = QPushButton("Run Neural Pre-Processing")
-        self.nppy_button.clicked.connect(self.run_nppy)
-        prep_layout.addWidget(self.nppy_button)
-        prep_layout.addStretch()
-
-        self.tabs = QTabWidget()
-        self.tabs.addTab(data_tab, "Data")
-        self.tabs.addTab(view_tab, "View")
-        self.tabs.addTab(prep_tab, "Prep")
-        self.tabs.currentChanged.connect(self.update_toolbar_visibility)
-        self.setCentralWidget(self.tabs)
+        # References for convenience
+        self.series_list = self.tabs.series_list
+        self.slice_slider = self.tabs.slice_slider
+        self.normalize_button = self.tabs.normalize_button
+        self.nppy_button = self.tabs.nppy_button
+        self.tab_widget = self.tabs.tabs
 
         # Status bar
         self.info_label = QLabel("Ready")
@@ -98,7 +60,6 @@ class DICOMViewer(QMainWindow):
         self.status.addPermanentWidget(self.info_label, 1)
         self.setStatusBar(self.status)
 
-        self._build_sidebar()
         self.update_toolbar_visibility()
         self._set_dark_theme()
 
@@ -131,61 +92,11 @@ class DICOMViewer(QMainWindow):
         palette.setColor(QPalette.ColorRole.HighlightedText, Qt.GlobalColor.black)
         app.setPalette(palette)
 
-    def _build_sidebar(self):
-        tb = QToolBar("Main", self)
-        tb.setMovable(False)
-        tb.setIconSize(QSize(24, 24))
-        tb.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextUnderIcon)
-        self.addToolBar(Qt.ToolBarArea.RightToolBarArea, tb)
-
-        self.act_open = QAction("Open", self)
-        self.act_open.setShortcut(QKeySequence("Ctrl+O"))
-        self.act_open.triggered.connect(self.open_folder_dialog)
-        tb.addAction(self.act_open)
-        self.sep_after_open = tb.addSeparator()
-
-        self.act_prev = QAction("Prev", self)
-        self.act_prev.setShortcuts([QKeySequence(Qt.Key.Key_Left), QKeySequence("PgUp")])
-        self.act_prev.triggered.connect(self.prev_slice)
-        tb.addAction(self.act_prev)
-
-        self.act_next = QAction("Next", self)
-        self.act_next.setShortcuts([QKeySequence(Qt.Key.Key_Right), QKeySequence("PgDown")])
-        self.act_next.triggered.connect(self.next_slice)
-        tb.addAction(self.act_next)
-
-        self.act_zoom_in = QAction("Zoom +", self)
-        self.act_zoom_in.setShortcut(QKeySequence("+"))
-        self.act_zoom_in.triggered.connect(self.canvas.zoom_in)
-        tb.addAction(self.act_zoom_in)
-
-        self.act_zoom_out = QAction("Zoom -", self)
-        self.act_zoom_out.setShortcut(QKeySequence("-"))
-        self.act_zoom_out.triggered.connect(self.canvas.zoom_out)
-        tb.addAction(self.act_zoom_out)
-
-        self.sep_before_axis = tb.addSeparator()
-
-        self.axis_combo = QComboBox()
-        self.axis_combo.addItems(["Axial", "Coronal", "Sagittal"])
-        self.axis_combo.currentTextChanged.connect(self.change_orientation)
-        tb.addWidget(self.axis_combo)
-
     def update_toolbar_visibility(self, index: int = None):
-        current = self.tabs.currentIndex()
+        current = self.tab_widget.currentIndex()
         is_data = current == 0
         is_view = current == 1
-
-        self.act_open.setVisible(is_data)
-        self.sep_after_open.setVisible(is_data)
-
-        show_view = is_view
-        self.act_prev.setVisible(show_view)
-        self.act_next.setVisible(show_view)
-        self.act_zoom_in.setVisible(show_view)
-        self.act_zoom_out.setVisible(show_view)
-        self.sep_before_axis.setVisible(show_view and self.series_is_3d)
-        self.axis_combo.setVisible(show_view and self.series_is_3d)
+        self.sidebar.update_visibility(is_data, is_view, self.series_is_3d)
 
     # -----------------------------------------------------------------
     # File loading
@@ -196,36 +107,9 @@ class DICOMViewer(QMainWindow):
             self.load_folder(path)
 
     def load_folder(self, folder: str):
-        self.series_data.clear()
+        self.series_data = fileio.discover_series(folder)
         self.series_list.clear()
 
-        for root, _, files in os.walk(folder):
-            for fn in files:
-                path = os.path.join(root, fn)
-                if not is_dicom_file(path):
-                    continue
-                try:
-                    ds = pydicom.dcmread(path, stop_before_pixels=True, force=True)
-                except Exception:
-                    continue
-                key = series_key_from_ds(ds)
-                self.series_data.setdefault(key, {"paths": [], "meta": ds})
-                self.series_data[key]["paths"].append(path)
-
-        # sort slices
-        for key, sd in self.series_data.items():
-            paths = sd["paths"]
-            sort_list = []
-            for p in paths:
-                try:
-                    ds = pydicom.dcmread(p, stop_before_pixels=True, force=True)
-                except Exception:
-                    continue
-                sort_list.append((sort_key_from_ds(ds), p))
-            sort_list.sort(key=lambda x: x[0])
-            sd["paths"] = [p for _, p in sort_list]
-
-        # populate list
         for key, sd in self.series_data.items():
             ds = sd["meta"]
             desc = getattr(ds, "SeriesDescription", "")
@@ -248,19 +132,12 @@ class DICOMViewer(QMainWindow):
         self.current_index = 0
 
         self.series_is_3d = "3d" in current.text().lower()
-        self.axis_combo.setCurrentIndex(0)
+        self.sidebar.axis_combo.setCurrentIndex(0)
         self.view_axis = "axial"
         self.update_toolbar_visibility()
 
         paths = self.series_data[key]["paths"]
-        vol = []
-        for p in paths:
-            try:
-                ds = pydicom.dcmread(p, force=True)
-                vol.append(dicom_to_ndarray(ds))
-            except Exception:
-                continue
-        self.volume = np.stack(vol, axis=0) if vol else None
+        self.volume = fileio.load_volume(paths)
         self._update_slider_range()
         self.display_current(reset_view=True)
 
@@ -300,14 +177,11 @@ class DICOMViewer(QMainWindow):
         self.current_index = val
         self.display_current()
 
-
     # -----------------------------------------------------------------
     # Pre-processing
     # -----------------------------------------------------------------
     def normalize_volume(self):
-        if self.volume is None:
-            return
-        self.volume = normalize_to_uint8(self.volume)
+        self.volume = processing.normalize_volume(self.volume)
         self.display_current()
 
     def run_nppy(self):
@@ -319,10 +193,7 @@ class DICOMViewer(QMainWindow):
         if not output_folder:
             return
         try:
-            subprocess.run(
-                ["nppy", "-i", input_folder, "-o", output_folder],
-                check=True,
-            )
+            processing.run_nppy(input_folder, output_folder)
             QMessageBox.information(
                 self, "Neural Pre-Processing", f"Results saved to: {output_folder}"
             )
